@@ -6,47 +6,63 @@ const URL = 'https://bulletin.du.edu/undergraduate/majorsminorscoursedescription
 
 async function scrapeCourses() {
     try {
-        // Fetch the HTML content
+        console.log('🔄 Fetching DU Bulletin page...');
         const { data } = await axios.get(URL);
         const $ = cheerio.load(data);
 
-        let courses = [];
+        // Check if we are correctly selecting the container
+        const courseContainer = $('#coursedescriptionstextcontainer');
 
-        // Select all course blocks
-        $('.courseblock').each((index, element) => {
-            let titleBlock = $(element).find('.courseblocktitle');
-            let descBlock = $(element).find('.courseblockdesc');
+        if (courseContainer.length === 0) {
+            console.log('❌ Could not find #coursedescriptionstextcontainer. The structure might be different.');
+            return;
+        }
 
-            // Extract course title and code
-            let courseTitleRaw = titleBlock.text().trim();
-            let match = courseTitleRaw.match(/(COMP&nbsp;\d{4})\s(.*)\((\d+)\sCredits\)/);
+        console.log('✅ Found #coursedescriptionstextcontainer. Checking course blocks...');
 
-            if (match) {
-                let courseCode = match[1].replace('&nbsp;', ' '); // Fix spacing
-                let courseTitle = match[2].trim();
+        const courses = [];
 
-                // Extract description and check for prerequisites
-                let description = descBlock.text();
-                let hasPrerequisite = descBlock.find('a').length > 0; // Check if a link (prerequisite) exists
+        courseContainer.find('.courseblock').each((index, element) => {
+            const courseTitleBlock = $(element).find('.courseblocktitle');
+            const courseDescBlock = $(element).find('.courseblockdesc');
 
-                // Add only if there's NO prerequisite
-                if (!hasPrerequisite) {
-                    courses.push({
-                        course: courseCode,
-                        title: courseTitle
-                    });
+            if (courseTitleBlock.length) {
+                let courseText = courseTitleBlock.text().trim().replace(/\s+/g, ' ');
+                
+                // Debugging: Print course title block text
+                console.log(`📌 Found Course Block: ${courseText}`);
+
+                let match = courseText.match(/(COMP(?:\s|&nbsp;)(\d+))\s(.*)/);
+
+                if (match) {
+                    let courseCode = match[1].replace('&nbsp;', ' ');  // Handle &nbsp;
+                    let courseNumber = parseInt(match[2]);
+                    let courseTitle = match[3];
+
+                    // Debugging: Print extracted course info
+                    console.log(`📖 Course: ${courseCode}, Title: ${courseTitle}`);
+
+                    if (courseNumber >= 3000) {
+                        const hasPrereq = courseDescBlock.find('a').length > 0;
+
+                        if (!hasPrereq) {
+                            courses.push({ course: courseCode, title: courseTitle });
+                        }
+                    }
+                } else {
+                    console.log('⚠️ Course title did not match expected format:', courseText);
                 }
             }
         });
 
-        // Save to JSON
-        const outputFilePath = 'results/bulletin.json';
-        await fs.outputJson(outputFilePath, { courses }, { spaces: 4 });
+        // Save results
+        const resultPath = './results/bulletin.json';
+        await fs.ensureDir('./results');
+        await fs.writeJson(resultPath, { courses }, { spaces: 2 });
 
-        console.log(`✅ Successfully scraped ${courses.length} upper-division CS courses without prerequisites!`);
-        console.log(`📁 Data saved in ${outputFilePath}`);
+        console.log(`✅ Scraped ${courses.length} upper-division CS courses without prerequisites.`);
     } catch (error) {
-        console.error("❌ Error scraping courses:", error);
+        console.error('❌ Error scraping DU Bulletin:', error);
     }
 }
 

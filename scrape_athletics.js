@@ -2,47 +2,51 @@ const axios = require('axios');
 const cheerio = require('cheerio');
 const fs = require('fs-extra');
 
-const URL = 'https://denverpioneers.com/calendar';
+const BASE_URL = 'https://denverpioneers.com/schedule.aspx?path=';
+const SPORTS_PATHS = [
+    "mbball", "wbball", "mgolf", "wgolf", "gymnastics", "mhockey", 
+    "mlax", "wlax", "skiing", "msoc", "wsoc", "mswim", "wswim", 
+    "mten", "wten", "wtri", "wvball"
+];
 
-async function scrapeAthleticEvents() {
-    try {
-        // Fetch the HTML content
-        const { data } = await axios.get(URL);
-        const $ = cheerio.load(data);
+async function scrapeAthleticSchedules() {
+    let allEvents = [];
 
-        let events = [];
+    for (let sport of SPORTS_PATHS) {
+        let url = `${BASE_URL}${sport}`;
+        console.log(`🔍 Scraping: ${url}`);
 
-        // Select all event blocks
-        $('.calendar-event').each((index, element) => {
-            // Extract event date and time
-            let dateTime = $(element).find('.calendar-date').text().trim();
+        try {
+            const { data } = await axios.get(url);
+            const $ = cheerio.load(data);
 
-            // Extract DU team and opponent team names
-            let teamsText = $(element).find('.calendar-opponent').text().trim();
-            let [duTeam, opponent] = teamsText.split(' vs. ');
+            $('.sidearm-schedule-game').each((index, element) => {
+                let date = $(element).find('.sidearm-schedule-game-opponent-date').text().trim();
+                let opponent = $(element).find('.sidearm-schedule-game-opponent-text').text().trim();
+                let location = $(element).find('.sidearm-schedule-game-location').text().trim();
+                let time = $(element).find('.sidearm-schedule-game-time').text().trim() || 'TBD';
 
-            // Clean and format the extracted data
-            duTeam = duTeam ? duTeam.trim() : 'University of Denver';
-            opponent = opponent ? opponent.trim() : 'TBD';
-
-            // Add the event to the list
-            events.push({
-                duTeam,
-                opponent,
-                date: dateTime
+                if (date && opponent) {
+                    allEvents.push({
+                        sport,
+                        date,
+                        opponent,
+                        location,
+                        time
+                    });
+                }
             });
-        });
-
-        // Save to JSON
-        const outputFilePath = 'results/athletics.json';
-        await fs.outputJson(outputFilePath, { events }, { spaces: 4 });
-
-        console.log(`✅ Successfully scraped ${events.length} upcoming athletic events!`);
-        console.log(`📁 Data saved in ${outputFilePath}`);
-    } catch (error) {
-        console.error("❌ Error scraping athletic events:", error);
+        } catch (error) {
+            console.error(`❌ Failed to scrape ${sport}:`, error.message);
+        }
     }
+
+    const outputFilePath = 'results/athletics.json';
+    await fs.outputJson(outputFilePath, { events: allEvents }, { spaces: 4 });
+
+    console.log(`✅ Scraped ${allEvents.length} games across 17 DU teams!`);
+    console.log(`📁 Data saved in ${outputFilePath}`);
 }
 
 // Run the scraper
-scrapeAthleticEvents();
+scrapeAthleticSchedules();
